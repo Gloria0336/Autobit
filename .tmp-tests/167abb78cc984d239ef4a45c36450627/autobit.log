@@ -1,0 +1,5 @@
+2026-04-02 12:25:57 [INFO] Simulation loop started | capital 10000 TWD | 312.5 USDT
+2026-04-02 12:25:57 [INFO] Tick started | tick=1
+2026-04-02 12:25:58 [INFO] Indicators | EMA200=68075.30 EMA20=67168.74 RSI=26.47 MACD_H=-75.218351
+2026-04-02 12:25:58 [INFO] Signal | HOLD | Trend filter failed
+2026-04-02 12:26:11 [INFO] Simulation stopped

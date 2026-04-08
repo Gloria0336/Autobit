@@ -1,0 +1,123 @@
+﻿<!DOCTYPE html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Autobit Web Dashboard</title>
+    <link rel="stylesheet" href="/assets/styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <aside class="control-panel">
+        <div class="panel-head">
+          <p class="eyebrow">Autobit</p>
+          <h1>策略回測與 AI 分析</h1>
+          <p class="panel-copy">建立單次 run、檢視 tick 與交易紀錄，並直接在前端產生可交給 AI 的分析報告與策略修正建議。</p>
+        </div>
+
+        <form id="run-form" class="form-grid">
+          <label>
+            <span>資料來源</span>
+            <select name="data_source" id="data-source">
+              <option value="live">即時模擬</option>
+              <option value="historical">歷史回放</option>
+            </select>
+          </label>
+
+          <div id="historical-fields" class="field-group hidden">
+            <label>
+              <span>歷史 CSV 檔案</span>
+              <input type="file" name="file" id="historical-file" accept=".csv,text/csv" />
+            </label>
+            <label>
+              <span>基礎 K 線週期</span>
+              <select name="historical_base_interval" id="historical-base-interval"></select>
+            </label>
+            <p class="helper">請上傳 OHLCV CSV，欄位需包含 `timestamp/open/high/low/close/volume` 或 Binance K 線格式。</p>
+          </div>
+
+          <label><span>起始資金 (TWD)</span><input type="number" step="100" min="1" name="starting_capital_twd" required /></label>
+          <label><span>檢查間隔 (秒)</span><input type="number" step="0.05" min="0.05" name="check_interval_sec" required /></label>
+          <label><span>交易商品</span><input type="text" name="symbol" required /></label>
+          <label><span>趨勢週期</span><select name="trend_interval"></select></label>
+          <label><span>訊號週期</span><select name="signal_interval"></select></label>
+          <label><span>RSI 進場下限</span><input type="number" step="0.1" min="0" max="100" name="rsi_entry_low" required /></label>
+          <label><span>RSI 進場上限</span><input type="number" step="0.1" min="0" max="100" name="rsi_entry_high" required /></label>
+          <label><span>RSI 出場上限</span><input type="number" step="0.1" min="0" max="100" name="rsi_exit_high" required /></label>
+          <label><span>避免追價 (%)</span><input type="number" step="0.001" min="0" max="1" name="anti_chase_pct" required /></label>
+          <label><span>停損 (%)</span><input type="number" step="0.001" min="0" max="1" name="stop_loss_pct" required /></label>
+          <label><span>移動停利觸發 (%)</span><input type="number" step="0.001" min="0" max="1" name="trail_trigger_pct" required /></label>
+          <label><span>移動停利回吐 (%)</span><input type="number" step="0.001" min="0" max="1" name="trail_stop_pct" required /></label>
+
+          <div class="form-actions">
+            <button type="submit" id="start-run-button" class="primary">開始模擬</button>
+            <button type="button" id="stop-run-button" class="secondary">結束模擬</button>
+            <button type="button" id="import-log-button" class="ghost">匯入 autobit.log</button>
+          </div>
+        </form>
+      </aside>
+
+      <main class="dashboard">
+        <section class="status-strip" id="status-strip"></section>
+        <section class="summary-grid" id="summary-grid"></section>
+
+        <section class="chart-grid">
+          <article class="card chart-card"><div class="card-head"><h2>資產曲線</h2><p>依 tick 顯示投資組合價值變化。</p></div><div id="equity-chart" class="chart-host"></div></article>
+          <article class="card chart-card"><div class="card-head"><h2>價格與 EMA</h2><p>價格、EMA20 與 EMA200 對照。</p></div><div id="price-chart" class="chart-host"></div></article>
+          <article class="card chart-card"><div class="card-head"><h2>RSI</h2><p>訊號週期的 RSI 走勢。</p></div><div id="rsi-chart" class="chart-host"></div></article>
+          <article class="card chart-card"><div class="card-head"><h2>MACD Histogram</h2><p>訊號週期的 MACD 柱狀圖。</p></div><div id="macd-chart" class="chart-host"></div></article>
+        </section>
+
+        <section class="lower-grid">
+          <article class="card run-list-card"><div class="card-head"><h2>Run 列表</h2><p>選擇要檢視與分析的單次 run。</p></div><div id="run-list" class="run-list"></div></article>
+          <article class="card timeline-card"><div class="card-head"><h2>最近 Tick</h2><p>分頁檢視 tick 訊號、價格與指標摘要。</p></div><div id="timeline" class="timeline"></div></article>
+          <article class="card trades-card"><div class="card-head"><h2>交易紀錄</h2><p>查看買賣時間、價格、數量與理由。</p></div><div id="trade-table"></div></article>
+        </section>
+
+        <section class="card report-card">
+          <div class="card-head">
+            <h2>AI 分析報告</h2>
+            <p>產生單次 run 的報告、複製 Prompt、下載檔案，或直接透過 OpenRouter 做策略分析。</p>
+          </div>
+
+          <div class="report-toolbar">
+            <div class="report-input-grid">
+              <div class="report-field">
+                <label for="report-api-key-input">OpenRouter API Key</label>
+                <input type="password" id="report-api-key-input" placeholder="可在前端暫時覆寫，不會送回伺服器儲存" autocomplete="off" />
+              </div>
+
+              <div class="report-field report-model-box">
+                <label for="report-model-input">模型</label>
+                <input type="text" id="report-model-input" list="model-options" placeholder="例如 openai/gpt-4.1-mini" autocomplete="off" />
+                <datalist id="model-options"></datalist>
+                <div id="model-suggestion-list" class="model-suggestion-list"></div>
+              </div>
+            </div>
+
+            <div class="report-toolbar-meta">
+              <div class="report-provider-row">
+                <span class="badge" id="report-provider-badge">openrouter</span>
+                <span class="report-status" id="analysis-test-status">尚未測試連線</span>
+              </div>
+
+              <div class="report-actions">
+                <button type="button" id="test-analysis-button" class="ghost">測試連線</button>
+                <button type="button" id="generate-report-button" class="primary">產生報告</button>
+                <button type="button" id="copy-prompt-button" class="ghost">複製 AI Prompt</button>
+                <button type="button" id="download-report-json-button" class="ghost">下載 JSON</button>
+                <button type="button" id="download-report-md-button" class="ghost">下載 Markdown</button>
+                <button type="button" id="analyze-report-button" class="secondary">AI 分析</button>
+              </div>
+            </div>
+          </div>
+
+          <div id="report-content"></div>
+        </section>
+      </main>
+    </div>
+
+    <template id="empty-state"><div class="empty-state"><p>目前沒有可顯示的資料。</p></div></template>
+    <script src="/assets/report_app.js" defer></script>
+  </body>
+</html>
