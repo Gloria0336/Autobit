@@ -85,7 +85,7 @@ class RunManager:
 
             self._create_run(run_id, started_at, live_config, portfolio, strategy, simulator, fx_rate)
 
-        self._broadcast("run_started", {"run_id": run_id, "config": live_config.model_dump(), "started_at": started_at})
+        self._broadcast("run_started", {"run_id": run_id, "config": live_config.model_dump(mode="json"), "started_at": started_at})
         simulator.start()
         return self._require_run(run_id)
 
@@ -136,7 +136,7 @@ class RunManager:
 
         self._broadcast(
             "run_started",
-            {"run_id": run_id, "config": historical_config.model_dump(), "started_at": started_at},
+            {"run_id": run_id, "config": historical_config.model_dump(mode="json"), "started_at": started_at},
         )
         simulator.start()
         return self._require_run(run_id)
@@ -224,7 +224,7 @@ class RunManager:
         initial_fx_rate: float,
     ) -> None:
         initial_summary = RunSummaryMetrics(starting_capital_twd=config.starting_capital_twd).model_dump()
-        self.storage.create_run(run_id, "running", started_at, config.model_dump(), summary=initial_summary)
+        self.storage.create_run(run_id, "running", started_at, config.model_dump(mode="json"), summary=initial_summary)
         self._active_run = ActiveRun(
             run_id=run_id,
             config=config,

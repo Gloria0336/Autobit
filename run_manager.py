@@ -11,7 +11,7 @@ from typing import Callable
 from uuid import uuid4
 
 from config import HISTORICAL_DATA_DIR, LOG_FILE
-from historical_data import HistoricalDataLoader, HistoricalFxService
+from historical_data import HistoricalBinanceFetcher, HistoricalDataError, HistoricalDataLoader, HistoricalFxService
 from live_market_data import MarketDataFetcher
 from log_importer import LegacyLogImporter
 from market_sources import HistoricalPlaybackSource, LiveMarketDataSource
@@ -23,6 +23,7 @@ from web_models import RunSummary, RunSummaryMetrics, SimulationConfig
 
 FetcherFactory = Callable[[], MarketDataFetcher]
 HistoricalFxFactory = Callable[[Storage], HistoricalFxService]
+HistoricalBinanceFactory = Callable[[], HistoricalBinanceFetcher]
 
 
 @dataclass
@@ -45,6 +46,7 @@ class RunManager:
         fetcher_factory: FetcherFactory | None = None,
         historical_fx_factory: HistoricalFxFactory | None = None,
         historical_loader: HistoricalDataLoader | None = None,
+        historical_binance_factory: HistoricalBinanceFactory | None = None,
         historical_data_dir: str | Path = HISTORICAL_DATA_DIR,
         log_path: str | Path = LOG_FILE,
     ) -> None:
@@ -52,6 +54,9 @@ class RunManager:
         self.fetcher_factory = fetcher_factory or MarketDataFetcher
         self.historical_fx_factory = historical_fx_factory or (lambda storage: HistoricalFxService(storage))
         self.historical_loader = historical_loader or HistoricalDataLoader()
+        self.historical_binance_factory = historical_binance_factory or (
+            lambda: HistoricalBinanceFetcher(loader=self.historical_loader)
+        )
         self.historical_data_dir = Path(historical_data_dir)
         self.log_path = Path(log_path)
         self._lock = threading.Lock()
@@ -85,23 +90,40 @@ class RunManager:
 
             self._create_run(run_id, started_at, live_config, portfolio, strategy, simulator, fx_rate)
 
-        self._broadcast("run_started", {"run_id": run_id, "config": live_config.model_dump(), "started_at": started_at})
+        self._broadcast("run_started", {"run_id": run_id, "config": live_config.model_dump(mode="json"), "started_at": started_at})
         simulator.start()
         return self._require_run(run_id)
 
-    def start_historical_run(self, config: SimulationConfig, raw_bytes: bytes) -> RunSummary:
+    def start_historical_run(self, config: SimulationConfig, raw_bytes: bytes | None = None) -> RunSummary:
         historical_config = config.model_copy(update={"data_source": "historical"})
         with self._lock:
             if self._active_run is not None:
                 raise RuntimeError("A simulation is already running")
 
             run_id = uuid4().hex
-            dataset = self.historical_loader.load_csv(
-                raw_bytes,
-                base_interval=historical_config.historical_base_interval or "",
-                trend_interval=historical_config.trend_interval,
-                signal_interval=historical_config.signal_interval,
-                source_filename=historical_config.historical_source_filename,
+            if raw_bytes:
+                dataset = self.historical_loader.load_csv(
+                    raw_bytes,
+                    base_interval=historical_config.historical_base_interval or "",
+                    trend_interval=historical_config.trend_interval,
+                    signal_interval=historical_config.signal_interval,
+                    source_filename=historical_config.historical_source_filename,
+                )
+            else:
+                if historical_config.historical_start_at is None or historical_config.historical_end_at is None:
+                    raise HistoricalDataError("Binance historical playback requires start and end datetimes")
+                dataset = self.historical_binance_factory().fetch_dataset(
+                    symbol=historical_config.symbol,
+                    base_interval=historical_config.historical_base_interval or "",
+                    trend_interval=historical_config.trend_interval,
+                    signal_interval=historical_config.signal_interval,
+                    start_at=historical_config.historical_start_at,
+                    end_at=historical_config.historical_end_at,
+                    source_filename=historical_config.historical_source_filename,
+                )
+
+            historical_config = historical_config.model_copy(
+                update={"historical_source_filename": dataset.source_filename}
             )
             self.historical_data_dir.mkdir(parents=True, exist_ok=True)
             dataset.save_normalized_csv(self.historical_data_dir / f"{run_id}.csv")
@@ -136,7 +158,7 @@ class RunManager:
 
         self._broadcast(
             "run_started",
-            {"run_id": run_id, "config": historical_config.model_dump(), "started_at": started_at},
+            {"run_id": run_id, "config": historical_config.model_dump(mode="json"), "started_at": started_at},
         )
         simulator.start()
         return self._require_run(run_id)
@@ -224,7 +246,7 @@ class RunManager:
         initial_fx_rate: float,
     ) -> None:
         initial_summary = RunSummaryMetrics(starting_capital_twd=config.starting_capital_twd).model_dump()
-        self.storage.create_run(run_id, "running", started_at, config.model_dump(), summary=initial_summary)
+        self.storage.create_run(run_id, "running", started_at, config.model_dump(mode="json"), summary=initial_summary)
         self._active_run = ActiveRun(
             run_id=run_id,
             config=config,

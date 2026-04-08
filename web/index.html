@@ -26,14 +26,34 @@
 
           <div id="historical-fields" class="field-group hidden">
             <label>
-              <span>歷史 CSV 檔案</span>
-              <input type="file" name="file" id="historical-file" accept=".csv,text/csv" />
+              <span>歷史資料來源</span>
+              <select name="historical_source_mode" id="historical-source-mode">
+                <option value="binance_api">Binance API</option>
+                <option value="csv_upload">CSV 上傳</option>
+              </select>
             </label>
             <label>
               <span>基礎週期</span>
               <select name="historical_base_interval" id="historical-base-interval"></select>
             </label>
-            <p class="helper">支援通用欄位 `timestamp/open/high/low/close/volume` 與 Binance K 線 CSV。</p>
+            <div id="historical-binance-fields" class="field-group">
+              <label>
+                <span>開始時間</span>
+                <input type="datetime-local" name="historical_start_at" id="historical-start-at" />
+              </label>
+              <label>
+                <span>結束時間</span>
+                <input type="datetime-local" name="historical_end_at" id="historical-end-at" />
+              </label>
+              <p class="helper">直接從 Binance API 抓指定區間 K 線做回放，結束時間不包含在回測資料內。</p>
+            </div>
+            <div id="historical-upload-fields" class="field-group hidden">
+              <label>
+                <span>歷史 CSV 檔案</span>
+                <input type="file" name="file" id="historical-file" accept=".csv,text/csv" />
+              </label>
+              <p class="helper">支援通用欄位 `timestamp/open/high/low/close/volume` 與 Binance K 線 CSV。</p>
+            </div>
           </div>
 
           <label><span>起始本金 (TWD)</span><input type="number" step="100" min="1" name="starting_capital_twd" required /></label>

@@ -1,2 +1,6 @@
 /.env
 /autobit.db
+/.autobit-data/
+*.db
+*.db-journal
+*.log

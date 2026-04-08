@@ -141,5 +141,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Autobit Web 控制台")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", default=8000, type=int)
+    parser.add_argument("--reload", action="store_true", help="Enable auto-reload for local development")
     args = parser.parse_args()
-    uvicorn.run("main:app", host=args.host, port=args.port, reload=False)
+    uvicorn.run("main:app", host=args.host, port=args.port, reload=args.reload)

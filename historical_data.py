@@ -11,9 +11,11 @@ import requests
 from pandas.api.types import is_numeric_dtype
 
 from config import (
+    BINANCE_BASE_URL,
     FRANKFURTER_BASE_URL,
     FX_RATE_BASE,
     FX_RATE_QUOTE,
+    KLINES_ENDPOINT,
     REQUEST_TIMEOUT,
     SIGNAL_LIMIT,
     SUPPORTED_INTERVALS,
@@ -110,12 +112,35 @@ class HistoricalDataLoader:
             raise HistoricalDataError("Uploaded CSV has no rows")
 
         detected_format, normalized = self._normalize_frame(frame)
+        return self.load_dataframe(
+            normalized,
+            base_interval=base_interval,
+            trend_interval=trend_interval,
+            signal_interval=signal_interval,
+            detected_format=detected_format,
+            source_filename=source_filename,
+        )
+
+    def load_dataframe(
+        self,
+        frame: pd.DataFrame,
+        *,
+        base_interval: str,
+        trend_interval: str,
+        signal_interval: str,
+        detected_format: str,
+        source_filename: str | None = None,
+    ) -> HistoricalDataset:
+        if frame.empty:
+            raise HistoricalDataError("Historical dataset has no rows")
+        if base_interval not in SUPPORTED_INTERVALS:
+            raise HistoricalDataError(f"Unsupported base interval: {base_interval}")
+
+        normalized = frame[["timestamp", "open", "high", "low", "close", "volume"]].copy()
         self._validate_frame(normalized, base_interval, trend_interval, signal_interval)
 
         enriched = normalized.copy()
-        base_delta = interval_to_timedelta(base_interval)
-        enriched["close_time"] = enriched["timestamp"] + base_delta
-
+        enriched["close_time"] = enriched["timestamp"] + interval_to_timedelta(base_interval)
         return HistoricalDataset(
             dataframe=enriched.reset_index(drop=True),
             detected_format=detected_format,
@@ -228,6 +253,132 @@ class HistoricalDataLoader:
 
     def _normalize_header(self, value: str) -> str:
         return value.strip().lower().replace(" ", "_")
+
+
+class HistoricalBinanceFetcher:
+    API_LIMIT = 1000
+
+    def __init__(
+        self,
+        *,
+        base_url: str = BINANCE_BASE_URL,
+        session: requests.Session | None = None,
+        loader: HistoricalDataLoader | None = None,
+    ) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.session = session or requests.Session()
+        self.session.headers.update({"Accept": "application/json"})
+        self.loader = loader or HistoricalDataLoader()
+
+    def fetch_dataset(
+        self,
+        *,
+        symbol: str,
+        base_interval: str,
+        trend_interval: str,
+        signal_interval: str,
+        start_at: datetime,
+        end_at: datetime,
+        source_filename: str | None = None,
+    ) -> HistoricalDataset:
+        start_utc = self._ensure_utc(start_at)
+        end_utc = self._ensure_utc(end_at)
+        if end_utc <= start_utc:
+            raise HistoricalDataError("Historical end time must be later than start time")
+
+        interval_delta = interval_to_timedelta(base_interval)
+        interval_ms = int(interval_delta.total_seconds() * 1000)
+        start_ms = self._to_milliseconds(start_utc)
+        end_ms = self._to_milliseconds(end_utc)
+        cursor = start_ms
+        rows: list[list[object]] = []
+
+        while cursor < end_ms:
+            batch = self._fetch_batch(symbol, base_interval, cursor, end_ms - 1)
+            if not batch:
+                break
+            rows.extend(batch)
+            next_cursor = int(batch[-1][0]) + interval_ms
+            if next_cursor <= cursor:
+                raise HistoricalDataError("Binance historical API returned a non-advancing kline page")
+            cursor = next_cursor
+            if len(batch) < self.API_LIMIT:
+                break
+
+        if not rows:
+            raise HistoricalDataError("Binance returned no historical candles for the selected window")
+
+        frame = self._parse_klines(rows)
+        frame = frame[(frame["timestamp"] >= start_utc) & (frame["timestamp"] < end_utc)].reset_index(drop=True)
+        if frame.empty:
+            raise HistoricalDataError("Selected Binance historical window produced no closed candles")
+
+        return self.loader.load_dataframe(
+            frame,
+            base_interval=base_interval,
+            trend_interval=trend_interval,
+            signal_interval=signal_interval,
+            detected_format="binance_api",
+            source_filename=source_filename or self._build_source_label(symbol, base_interval, start_utc, end_utc),
+        )
+
+    def _fetch_batch(self, symbol: str, interval: str, start_ms: int, end_ms: int) -> list[list[object]]:
+        url = f"{self.base_url}{KLINES_ENDPOINT}"
+        params = {
+            "symbol": symbol,
+            "interval": interval,
+            "startTime": start_ms,
+            "endTime": end_ms,
+            "limit": self.API_LIMIT,
+        }
+        try:
+            response = self.session.get(url, params=params, timeout=REQUEST_TIMEOUT)
+            response.raise_for_status()
+            payload = response.json()
+        except Exception as exc:
+            raise HistoricalDataError(f"Failed to fetch Binance historical klines: {exc}") from exc
+
+        if not isinstance(payload, list):
+            raise HistoricalDataError("Unexpected Binance historical kline payload")
+        return payload
+
+    def _parse_klines(self, raw: list[list[object]]) -> pd.DataFrame:
+        frame = pd.DataFrame(
+            raw,
+            columns=[
+                "open_time",
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                "close_time",
+                "quote_volume",
+                "trades",
+                "taker_buy_base",
+                "taker_buy_quote",
+                "ignore",
+            ],
+        )
+        frame["timestamp"] = pd.to_datetime(frame["open_time"], unit="ms", utc=True)
+        for column in ("open", "high", "low", "close", "volume"):
+            frame[column] = pd.to_numeric(frame[column], errors="coerce")
+        return frame[["timestamp", "open", "high", "low", "close", "volume"]]
+
+    def _ensure_utc(self, value: datetime) -> pd.Timestamp:
+        timestamp = pd.Timestamp(value)
+        if timestamp.tzinfo is None:
+            return timestamp.tz_localize("UTC")
+        return timestamp.tz_convert("UTC")
+
+    def _to_milliseconds(self, value: datetime | pd.Timestamp) -> int:
+        timestamp = pd.Timestamp(value)
+        return int(timestamp.timestamp() * 1000)
+
+    def _build_source_label(self, symbol: str, interval: str, start_at: pd.Timestamp, end_at: pd.Timestamp) -> str:
+        start_text = start_at.strftime("%Y-%m-%dT%H:%MZ")
+        end_text = end_at.strftime("%Y-%m-%dT%H:%MZ")
+        return f"binance:{symbol}:{interval}:{start_text}->{end_text}"
 
 
 class HistoricalFxService:

@@ -159,19 +159,25 @@ def create_app(
     @app.post("/api/runs/historical", response_model=RunSummary)
     async def create_historical_run(request: Request) -> RunSummary:
         fields, upload = await _parse_multipart_form(request)
-        if upload is None:
-            raise HTTPException(status_code=400, detail="Historical playback requires a CSV file upload")
-
         payload = _coerce_form_config(fields)
-        payload.update(
-            {
-                "data_source": "historical",
-                "historical_source_filename": upload["filename"] or "historical.csv",
-            }
-        )
+        payload["data_source"] = "historical"
+        if upload is not None:
+            payload["historical_source_mode"] = "csv_upload"
+            payload["historical_source_filename"] = upload["filename"] or "historical.csv"
+        else:
+            payload.setdefault("historical_source_mode", "binance_api")
         try:
             config = SimulationConfig.model_validate(payload)
-            return app.state.run_manager.start_historical_run(config, upload["content"])
+            if upload is None:
+                config = config.model_copy(
+                    update={
+                        "historical_source_filename": config.historical_source_filename or _build_binance_source_label(config),
+                    }
+                )
+            return app.state.run_manager.start_historical_run(
+                config,
+                upload["content"] if upload is not None else None,
+            )
         except ValidationError as exc:
             raise HTTPException(status_code=422, detail=exc.errors()) from exc
         except HistoricalDataError as exc:
@@ -228,7 +234,16 @@ def _coerce_form_config(form) -> dict:
         payload[key] = float(value) if key in numeric_fields else value
         if key in {"ema_trend_period", "ema_signal_period", "rsi_period", "macd_fast", "macd_slow", "macd_signal_line"}:
             payload[key] = int(float(value))
+    payload.setdefault("data_source", "historical")
+    payload.setdefault("historical_source_mode", "binance_api")
     return payload
+
+
+def _build_binance_source_label(config: SimulationConfig) -> str:
+    start_at = config.historical_start_at.isoformat() if config.historical_start_at else "unknown-start"
+    end_at = config.historical_end_at.isoformat() if config.historical_end_at else "unknown-end"
+    base_interval = config.historical_base_interval or "unknown-interval"
+    return f"binance:{config.symbol}:{base_interval}:{start_at}->{end_at}"
 
 
 async def _parse_multipart_form(request: Request) -> tuple[dict[str, str], dict[str, object] | None]:

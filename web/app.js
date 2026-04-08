@@ -31,6 +31,7 @@ function bindActions() {
   document.getElementById("stop-run-button").addEventListener("click", () => runAction(stopSelectedRun));
   document.getElementById("import-log-button").addEventListener("click", () => runAction(importLog));
   document.getElementById("data-source").addEventListener("change", toggleHistoricalFields);
+  document.getElementById("historical-source-mode").addEventListener("change", toggleHistoricalFields);
 }
 
 async function loadDefaults() {
@@ -45,7 +46,9 @@ async function loadDefaults() {
     if (form.elements[key] && form.elements[key].type !== "file") form.elements[key].value = value;
   });
   form.elements.data_source.value = "live";
+  form.elements.historical_source_mode.value = "binance_api";
   form.elements.historical_base_interval.value = defaults.signal_interval;
+  setDefaultHistoricalRange(form);
 }
 
 async function refreshRuns() {
@@ -65,8 +68,15 @@ async function selectRun(runId) {
 
 function toggleHistoricalFields() {
   const historical = document.getElementById("data-source").value === "historical";
+  const sourceMode = document.getElementById("historical-source-mode").value;
+  const useBinanceApi = historical && sourceMode === "binance_api";
+  const useCsvUpload = historical && sourceMode === "csv_upload";
   document.getElementById("historical-fields").classList.toggle("hidden", !historical);
-  document.getElementById("historical-file").required = historical;
+  document.getElementById("historical-binance-fields").classList.toggle("hidden", !useBinanceApi);
+  document.getElementById("historical-upload-fields").classList.toggle("hidden", !useCsvUpload);
+  document.getElementById("historical-file").required = useCsvUpload;
+  document.getElementById("historical-start-at").required = useBinanceApi;
+  document.getElementById("historical-end-at").required = useBinanceApi;
   document.getElementById("historical-base-interval").required = historical;
 }
 
@@ -88,7 +98,15 @@ async function submitLiveRun(form) {
   const payload = {};
   const formData = new FormData(form);
   formData.forEach((value, key) => {
-    if (key === "data_source" || key === "historical_base_interval" || key === "file" || value === "") return;
+    if (
+      key === "data_source"
+      || key === "historical_base_interval"
+      || key === "historical_source_mode"
+      || key === "historical_start_at"
+      || key === "historical_end_at"
+      || key === "file"
+      || value === ""
+    ) return;
     payload[key] = numericFields.has(key) ? Number(value) : value;
   });
   const run = await request("/api/runs", {
@@ -100,13 +118,44 @@ async function submitLiveRun(form) {
 }
 
 async function submitHistoricalRun(form) {
-  const payload = new FormData(form);
+  const payload = new FormData();
+  const formData = new FormData(form);
+  const sourceMode = form.elements.historical_source_mode.value;
+  formData.forEach((value, key) => {
+    if (key === "file" && sourceMode !== "csv_upload") return;
+    if ((key === "historical_start_at" || key === "historical_end_at") && sourceMode !== "binance_api") return;
+    if (value instanceof File && !value.name) return;
+    if (value === "") return;
+    if (key === "historical_start_at" || key === "historical_end_at") {
+      payload.append(key, toUtcIsoString(String(value)));
+      return;
+    }
+    payload.append(key, value);
+  });
   const response = await fetch("/api/runs/historical", { method: "POST", body: payload });
   const body = await response.json().catch(() => ({ detail: response.statusText }));
   if (!response.ok) {
     throw new Error(formatError(body.detail));
   }
   state.selectedRunId = body.id;
+}
+
+function setDefaultHistoricalRange(form) {
+  const end = new Date();
+  end.setSeconds(0, 0);
+  const start = new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000);
+  form.elements.historical_start_at.value = toDateTimeLocalValue(start);
+  form.elements.historical_end_at.value = toDateTimeLocalValue(end);
+}
+
+function toDateTimeLocalValue(date) {
+  const offsetMs = date.getTimezoneOffset() * 60 * 1000;
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+}
+
+function toUtcIsoString(localValue) {
+  const parsed = new Date(localValue);
+  return Number.isNaN(parsed.getTime()) ? localValue : parsed.toISOString();
 }
 
 async function stopSelectedRun() {

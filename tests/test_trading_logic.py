@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 
 from analysis_ai import ReportAnalysisService
 from analysis_report import RunReportService
-from historical_data import HistoricalDataError, HistoricalDataLoader, HistoricalFxService
+from historical_data import HistoricalBinanceFetcher, HistoricalDataError, HistoricalDataLoader, HistoricalFxService
 from indicators import rsi
 from live_market_data import DataIntegrityError, MarketDataFetcher
 from market_sources import HistoricalPlaybackSource
@@ -80,6 +80,31 @@ def make_binance_history_csv(periods: int = 900) -> bytes:
     return payload.to_csv(index=False).encode("utf-8")
 
 
+def make_binance_api_klines(periods: int = 900) -> list[list[object]]:
+    frame = make_history_frame(periods)
+    interval_ms = 15 * 60 * 1000
+    payload: list[list[object]] = []
+    for row in frame.itertuples(index=False):
+        open_ms = int(pd.Timestamp(row.timestamp).timestamp() * 1000)
+        payload.append(
+            [
+                open_ms,
+                f"{row.open:.8f}",
+                f"{row.high:.8f}",
+                f"{row.low:.8f}",
+                f"{row.close:.8f}",
+                f"{row.volume:.8f}",
+                open_ms + interval_ms - 1,
+                "0",
+                0,
+                "0",
+                "0",
+                "0",
+            ]
+        )
+    return payload
+
+
 class IndicatorTests(unittest.TestCase):
     def test_rsi_returns_100_for_persistent_gains(self) -> None:
         series = pd.Series(range(1, 17), dtype=float)
@@ -134,6 +159,14 @@ class ConfigTests(unittest.TestCase):
     def test_simulation_config_requires_historical_interval(self) -> None:
         with self.assertRaises(ValueError):
             SimulationConfig(data_source="historical")
+
+    def test_simulation_config_allows_csv_historical_without_dates(self) -> None:
+        config = SimulationConfig(
+            data_source="historical",
+            historical_source_mode="csv_upload",
+            historical_base_interval="15m",
+        )
+        self.assertEqual(config.historical_source_mode, "csv_upload")
 
     def test_config_can_load_openrouter_values_from_env_file(self) -> None:
         env_path = Path.cwd() / ".env"
@@ -248,6 +281,58 @@ class HistoricalLoaderTests(unittest.TestCase):
             )
 
 
+class StubResponse:
+    def __init__(self, payload: list[list[object]]) -> None:
+        self.payload = payload
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> list[list[object]]:
+        return self.payload
+
+
+class StubKlineSession:
+    def __init__(self, pages: dict[int, list[list[object]]]) -> None:
+        self.pages = pages
+        self.calls: list[dict[str, object]] = []
+        self.headers: dict[str, str] = {}
+
+    def get(self, url: str, params: dict[str, object] | None = None, timeout: int | None = None) -> StubResponse:
+        params = params or {}
+        self.calls.append({"url": url, "params": dict(params), "timeout": timeout})
+        return StubResponse(self.pages.get(int(params["startTime"]), []))
+
+
+class HistoricalBinanceFetcherTests(unittest.TestCase):
+    def test_fetch_dataset_paginates_binance_klines(self) -> None:
+        raw = make_binance_api_klines(1001)
+        frame = make_history_frame(1001)
+        start_at = frame["timestamp"].iloc[0].to_pydatetime()
+        end_at = (frame["timestamp"].iloc[-1] + pd.Timedelta(minutes=15)).to_pydatetime()
+        second_page_start = int(raw[1000][0])
+        session = StubKlineSession(
+            {
+                int(raw[0][0]): raw[:1000],
+                second_page_start: raw[1000:],
+            }
+        )
+        fetcher = HistoricalBinanceFetcher(session=session)
+
+        dataset = fetcher.fetch_dataset(
+            symbol="BTCUSDT",
+            base_interval="15m",
+            trend_interval="1h",
+            signal_interval="15m",
+            start_at=start_at,
+            end_at=end_at,
+        )
+
+        self.assertEqual(len(dataset.dataframe), 1001)
+        self.assertEqual(len(session.calls), 2)
+        self.assertEqual(dataset.detected_format, "binance_api")
+
+
 class StubHistoricalFxService(HistoricalFxService):
     def __init__(self, storage: Storage, *, weekend_fallback: bool = False) -> None:
         super().__init__(storage)
@@ -337,6 +422,41 @@ class FakeFetcher:
                 "close": close,
                 "volume": [1000.0] * limit,
             }
+        )
+
+
+class FakeHistoricalBinanceFetcher:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    def fetch_dataset(
+        self,
+        *,
+        symbol: str,
+        base_interval: str,
+        trend_interval: str,
+        signal_interval: str,
+        start_at,
+        end_at,
+        source_filename: str | None = None,
+    ):
+        self.calls.append(
+            {
+                "symbol": symbol,
+                "base_interval": base_interval,
+                "trend_interval": trend_interval,
+                "signal_interval": signal_interval,
+                "start_at": start_at,
+                "end_at": end_at,
+                "source_filename": source_filename,
+            }
+        )
+        return HistoricalDataLoader().load_csv(
+            make_generic_history_csv(),
+            base_interval=base_interval,
+            trend_interval=trend_interval,
+            signal_interval=signal_interval,
+            source_filename=source_filename or f"binance:{symbol}:{base_interval}",
         )
 
 
@@ -453,13 +573,19 @@ class RunManagerTests(unittest.TestCase):
 
 
 class ApiTests(unittest.TestCase):
-    def _create_historical_app(self, db_path: Path, tmpdir: Path):
+    def _create_historical_app(
+        self,
+        db_path: Path,
+        tmpdir: Path,
+        historical_binance_factory=None,
+    ):
         return create_app(
             db_path=db_path,
             run_manager=RunManager(
                 Storage(db_path),
                 fetcher_factory=FakeFetcher,
                 historical_fx_factory=lambda storage: StubHistoricalFxService(storage),
+                historical_binance_factory=historical_binance_factory,
                 historical_data_dir=tmpdir / "historical",
             ),
         )
@@ -530,6 +656,58 @@ class ApiTests(unittest.TestCase):
             self.assertEqual(payload["run"]["status"], "completed")
             self.assertGreaterEqual(len(payload["ticks"]), 1)
             self.assertIsNotNone(payload["ticks"][0]["market_timestamp"])
+            self.assertTrue((tmpdir / "historical" / f"{run_id}.csv").exists())
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_historical_run_endpoint_fetches_from_binance_api_and_completes(self) -> None:
+        tmpdir = make_workspace_tmpdir()
+        try:
+            db_path = tmpdir / "autobit.db"
+            fake_historical_fetcher = FakeHistoricalBinanceFetcher()
+            app = self._create_historical_app(
+                db_path,
+                tmpdir,
+                historical_binance_factory=lambda: fake_historical_fetcher,
+            )
+            client = TestClient(app)
+
+            response = client.post(
+                "/api/runs/historical",
+                files=[
+                    ("starting_capital_twd", (None, "10000")),
+                    ("check_interval_sec", (None, "0.05")),
+                    ("symbol", (None, "BTCUSDT")),
+                    ("trend_interval", (None, "1h")),
+                    ("signal_interval", (None, "15m")),
+                    ("rsi_entry_low", (None, "50")),
+                    ("rsi_entry_high", (None, "70")),
+                    ("rsi_exit_high", (None, "75")),
+                    ("anti_chase_pct", (None, "0.02")),
+                    ("stop_loss_pct", (None, "0.02")),
+                    ("trail_trigger_pct", (None, "0.015")),
+                    ("trail_stop_pct", (None, "0.01")),
+                    ("historical_source_mode", (None, "binance_api")),
+                    ("historical_base_interval", (None, "15m")),
+                    ("historical_start_at", (None, "2026-01-01T00:00:00Z")),
+                    ("historical_end_at", (None, "2026-01-10T09:00:00Z")),
+                ],
+            )
+            self.assertEqual(response.status_code, 200)
+            run_id = response.json()["id"]
+
+            payload = None
+            for _ in range(60):
+                detail = client.get(f"/api/runs/{run_id}")
+                self.assertEqual(detail.status_code, 200)
+                payload = detail.json()
+                if payload["run"]["status"] == "completed":
+                    break
+                time.sleep(0.1)
+            self.assertIsNotNone(payload)
+            self.assertEqual(payload["run"]["status"], "completed")
+            self.assertEqual(payload["run"]["config"]["historical_source_mode"], "binance_api")
+            self.assertEqual(len(fake_historical_fetcher.calls), 1)
             self.assertTrue((tmpdir / "historical" / f"{run_id}.csv").exists())
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)

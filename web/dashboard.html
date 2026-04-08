@@ -26,14 +26,34 @@
 
           <div id="historical-fields" class="field-group hidden">
             <label>
-              <span>歷史 CSV 檔案</span>
-              <input type="file" name="file" id="historical-file" accept=".csv,text/csv" />
+              <span>歷史資料來源</span>
+              <select name="historical_source_mode" id="historical-source-mode">
+                <option value="binance_api">Binance API</option>
+                <option value="csv_upload">CSV 上傳</option>
+              </select>
             </label>
             <label>
               <span>基礎 K 線週期</span>
               <select name="historical_base_interval" id="historical-base-interval"></select>
             </label>
-            <p class="helper">請上傳 OHLCV CSV，欄位需包含 `timestamp/open/high/low/close/volume` 或 Binance K 線格式。</p>
+            <div id="historical-binance-fields" class="field-group">
+              <label>
+                <span>開始時間</span>
+                <input type="datetime-local" name="historical_start_at" id="historical-start-at" />
+              </label>
+              <label>
+                <span>結束時間</span>
+                <input type="datetime-local" name="historical_end_at" id="historical-end-at" />
+              </label>
+              <p class="helper">直接向 Binance 抓取歷史 K 線。前端會將你輸入的本地時間自動轉成 UTC，結束時間為不包含。</p>
+            </div>
+            <div id="historical-upload-fields" class="field-group hidden">
+              <label>
+                <span>歷史 CSV 檔案</span>
+                <input type="file" name="file" id="historical-file" accept=".csv,text/csv" />
+              </label>
+              <p class="helper">保留舊版 CSV 匯入流程，欄位需包含 `timestamp/open/high/low/close/volume` 或 Binance K 線格式。</p>
+            </div>
           </div>
 
           <label><span>起始資金 (TWD)</span><input type="number" step="100" min="1" name="starting_capital_twd" required /></label>

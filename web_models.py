@@ -72,6 +72,9 @@ class SimulationConfig(BaseModel):
     fx_rate_quote: str = FX_RATE_QUOTE
     data_source: Literal["live", "historical"] = "live"
     historical_base_interval: str | None = None
+    historical_source_mode: Literal["binance_api", "csv_upload"] = "binance_api"
+    historical_start_at: datetime | None = None
+    historical_end_at: datetime | None = None
     historical_fx_mode: Literal["historical_daily"] = "historical_daily"
     historical_source_filename: str | None = None
 
@@ -91,8 +94,18 @@ class SimulationConfig(BaseModel):
             raise ValueError("rsi_entry_high must be less than rsi_exit_high")
         if values.get("macd_fast", 0) >= values.get("macd_slow", 0):
             raise ValueError("macd_fast must be less than macd_slow")
-        if values.get("data_source") == "historical" and not values.get("historical_base_interval"):
-            raise ValueError("historical_base_interval is required for historical playback")
+        if values.get("data_source") == "historical":
+            if not values.get("historical_base_interval"):
+                raise ValueError("historical_base_interval is required for historical playback")
+            if values.get("historical_source_mode") == "binance_api":
+                start_at = values.get("historical_start_at")
+                end_at = values.get("historical_end_at")
+                if start_at is None or end_at is None:
+                    raise ValueError(
+                        "historical_start_at and historical_end_at are required for Binance historical playback"
+                    )
+                if end_at <= start_at:
+                    raise ValueError("historical_end_at must be later than historical_start_at")
         return values
 
 

@@ -83,7 +83,7 @@ class HistoricalPlaybackSource:
         if not self._playable_indices:
             return []
         close_times = self.base_df.loc[self._playable_indices, "close_time"]
-        return [timestamp.date() for timestamp in np.array(close_times.dt.to_pydatetime())]
+        return [timestamp.date() for timestamp in close_times.tolist()]
 
     def get_next_snapshot(self) -> MarketSnapshot:
         if self._cursor >= len(self._playable_indices):
