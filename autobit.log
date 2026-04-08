@@ -122,3 +122,8 @@
 2026-04-08 12:43:06 [INFO] BUY | price=71633.01 | btc=0.004365 | fee=0.5010 USDT (taker) | 趨勢、RSI(62.8) 與 MACD 條件同時成立
 2026-04-08 12:43:06 [INFO] Entered position | entry_price=71633.01
 2026-04-08 17:35:32 [INFO] Simulation loop started | interval=60.00s | source=live
+2026-04-08 18:27:35 [INFO] Simulation loop started | interval=10.00s | source=live
+2026-04-08 18:27:36 [INFO] BUY | price=71663.04 | btc=0.004373 | fee=0.5022 USDT (taker) | 趨勢、RSI(51.6) 與 MACD 條件同時成立
+2026-04-08 18:27:36 [INFO] Entered position | entry_price=71663.04
+2026-04-08 18:32:01 [INFO] SELL | price=71615.70 | btc=0.004373 | fee=0.2506 USDT (maker) | MACD 由正轉負：2.021072 -> -0.138150
+2026-04-08 18:32:01 [INFO] Exited position
