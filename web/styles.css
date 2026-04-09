@@ -46,6 +46,34 @@ body {
 .form-grid { display: grid; gap: 14px; margin-top: 20px; }
 .form-grid label { display: grid; gap: 8px; }
 .form-grid span { font-size: 0.92rem; font-weight: 600; }
+.form-section {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.46);
+  border: 1px solid rgba(23, 33, 45, 0.08);
+}
+.form-section-head { display: grid; gap: 6px; }
+.form-section-head h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-family: "Bahnschrift", "Segoe UI Variable Display", sans-serif;
+}
+.form-section-head p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+.form-section-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.form-section-grid label:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
 input, select, button { font: inherit; }
 input, select {
   width: 100%;
@@ -204,4 +232,8 @@ button[data-toggle-state="inactive"] {
   .page-shell, .status-strip, .summary-grid, .chart-grid, .lower-grid { grid-template-columns: 1fr; }
   .control-panel { position: static; }
   .report-columns, .report-summary-grid, .report-input-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 720px) {
+  .form-section-grid { grid-template-columns: 1fr; }
+  .form-section-grid label:last-child:nth-child(odd) { grid-column: auto; }
 }

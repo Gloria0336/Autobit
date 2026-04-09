@@ -16,58 +16,109 @@
         </div>
 
         <form id="run-form" class="form-grid">
-          <label>
-            <span>資料來源</span>
-            <select name="data_source" id="data-source">
-              <option value="live">即時模擬</option>
-              <option value="historical">歷史回放</option>
-            </select>
-          </label>
-
-          <div id="historical-fields" class="field-group hidden">
-            <label>
-              <span>歷史資料來源</span>
-              <select name="historical_source_mode" id="historical-source-mode">
-                <option value="binance_api">Binance API</option>
-                <option value="csv_upload">CSV 上傳</option>
-              </select>
-            </label>
-            <label>
-              <span>基礎 K 線週期</span>
-              <select name="historical_base_interval" id="historical-base-interval"></select>
-            </label>
-            <div id="historical-binance-fields" class="field-group">
-              <label>
-                <span>開始時間</span>
-                <input type="datetime-local" name="historical_start_at" id="historical-start-at" />
-              </label>
-              <label>
-                <span>結束時間</span>
-                <input type="datetime-local" name="historical_end_at" id="historical-end-at" />
-              </label>
-              <p class="helper">直接向 Binance 抓取歷史 K 線。前端會將你輸入的本地時間自動轉成 UTC，結束時間為不包含。</p>
+          <section class="form-section">
+            <div class="form-section-head">
+              <h2>資料來源</h2>
+              <p>切換即時模擬或歷史回放，並設定回放來源。</p>
             </div>
-            <div id="historical-upload-fields" class="field-group hidden">
+            <div class="form-section-grid">
               <label>
-                <span>歷史 CSV 檔案</span>
-                <input type="file" name="file" id="historical-file" accept=".csv,text/csv" />
+                <span>資料來源</span>
+                <select name="data_source" id="data-source">
+                  <option value="live">即時模擬</option>
+                  <option value="historical">歷史回放</option>
+                </select>
               </label>
-              <p class="helper">保留舊版 CSV 匯入流程，欄位需包含 `timestamp/open/high/low/close/volume` 或 Binance K 線格式。</p>
             </div>
-          </div>
 
-          <label><span>起始資金 (TWD)</span><input type="number" step="100" min="1" name="starting_capital_twd" required /></label>
-          <label><span>檢查間隔 (秒)</span><input type="number" step="0.05" min="0.05" name="check_interval_sec" required /></label>
-          <label><span>交易商品</span><input type="text" name="symbol" required /></label>
-          <label><span>趨勢週期</span><select name="trend_interval"></select></label>
-          <label><span>訊號週期</span><select name="signal_interval"></select></label>
-          <label><span>RSI 進場下限</span><input type="number" step="0.1" min="0" max="100" name="rsi_entry_low" required /></label>
-          <label><span>RSI 進場上限</span><input type="number" step="0.1" min="0" max="100" name="rsi_entry_high" required /></label>
-          <label><span>RSI 出場上限</span><input type="number" step="0.1" min="0" max="100" name="rsi_exit_high" required /></label>
-          <label><span>避免追價 (%)</span><input type="number" step="0.001" min="0" max="1" name="anti_chase_pct" required /></label>
-          <label><span>停損 (%)</span><input type="number" step="0.001" min="0" max="1" name="stop_loss_pct" required /></label>
-          <label><span>移動停利觸發 (%)</span><input type="number" step="0.001" min="0" max="1" name="trail_trigger_pct" required /></label>
-          <label><span>移動停利回吐 (%)</span><input type="number" step="0.001" min="0" max="1" name="trail_stop_pct" required /></label>
+            <div id="historical-fields" class="field-group hidden">
+              <div class="form-section-grid">
+                <label>
+                  <span>歷史資料來源</span>
+                  <select name="historical_source_mode" id="historical-source-mode">
+                    <option value="binance_api">Binance API</option>
+                    <option value="csv_upload">CSV 上傳</option>
+                  </select>
+                </label>
+                <label>
+                  <span>基礎 K 線週期</span>
+                  <select name="historical_base_interval" id="historical-base-interval"></select>
+                </label>
+              </div>
+              <div id="historical-binance-fields" class="field-group">
+                <div class="form-section-grid">
+                  <label>
+                    <span>開始時間</span>
+                    <input type="datetime-local" name="historical_start_at" id="historical-start-at" />
+                  </label>
+                  <label>
+                    <span>結束時間</span>
+                    <input type="datetime-local" name="historical_end_at" id="historical-end-at" />
+                  </label>
+                </div>
+                <p class="helper">直接向 Binance 抓取歷史 K 線。前端會將你輸入的本地時間自動轉成 UTC，結束時間為不包含。</p>
+              </div>
+              <div id="historical-upload-fields" class="field-group hidden">
+                <div class="form-section-grid">
+                  <label>
+                    <span>歷史 CSV 檔案</span>
+                    <input type="file" name="file" id="historical-file" accept=".csv,text/csv" />
+                  </label>
+                </div>
+                <p class="helper">保留舊版 CSV 匯入流程，欄位需包含 `timestamp/open/high/low/close/volume` 或 Binance K 線格式。</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="form-section">
+            <div class="form-section-head">
+              <h2>基本設定</h2>
+              <p>先決定資金、商品與主要觀察週期。</p>
+            </div>
+            <div class="form-section-grid">
+              <label><span>起始資金 (TWD)</span><input type="number" step="100" min="1" name="starting_capital_twd" required /></label>
+              <label><span>檢查間隔 (秒)</span><input type="number" step="0.05" min="0.05" name="check_interval_sec" required /></label>
+              <label><span>交易商品</span><input type="text" name="symbol" required /></label>
+              <label><span>趨勢週期</span><select name="trend_interval"></select></label>
+              <label><span>訊號週期</span><select name="signal_interval"></select></label>
+            </div>
+          </section>
+
+          <section class="form-section">
+            <div class="form-section-head">
+              <h2>EMA</h2>
+              <p>控制趨勢過濾與進場參考的 EMA 週期。</p>
+            </div>
+            <div class="form-section-grid">
+              <label><span>趨勢 EMA 週期</span><input type="number" step="1" min="2" name="ema_trend_period" required /></label>
+              <label><span>訊號 EMA 週期</span><input type="number" step="1" min="2" name="ema_signal_period" required /></label>
+            </div>
+          </section>
+
+          <section class="form-section">
+            <div class="form-section-head">
+              <h2>RSI</h2>
+              <p>設定 RSI 的進出場條件區間。</p>
+            </div>
+            <div class="form-section-grid">
+              <label><span>RSI 進場下限</span><input type="number" step="0.1" min="0" max="100" name="rsi_entry_low" required /></label>
+              <label><span>RSI 進場上限</span><input type="number" step="0.1" min="0" max="100" name="rsi_entry_high" required /></label>
+              <label><span>RSI 出場上限</span><input type="number" step="0.1" min="0" max="100" name="rsi_exit_high" required /></label>
+            </div>
+          </section>
+
+          <section class="form-section">
+            <div class="form-section-head">
+              <h2>風控</h2>
+              <p>限制追價、停損與移動停利行為。</p>
+            </div>
+            <div class="form-section-grid">
+              <label><span>避免追價 (%)</span><input type="number" step="0.001" min="0" max="1" name="anti_chase_pct" required /></label>
+              <label><span>停損 (%)</span><input type="number" step="0.001" min="0" max="1" name="stop_loss_pct" required /></label>
+              <label><span>移動停利觸發 (%)</span><input type="number" step="0.001" min="0" max="1" name="trail_trigger_pct" required /></label>
+              <label><span>移動停利回吐 (%)</span><input type="number" step="0.001" min="0" max="1" name="trail_stop_pct" required /></label>
+            </div>
+          </section>
 
           <div class="form-actions">
             <button type="submit" id="start-run-button" class="primary">開始模擬</button>

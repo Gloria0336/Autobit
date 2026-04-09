@@ -69,6 +69,9 @@
           <label><span>移動停利啟動 (%)</span><input type="number" step="0.001" min="0" max="1" name="trail_trigger_pct" required /></label>
           <label><span>移動停利回撤 (%)</span><input type="number" step="0.001" min="0" max="1" name="trail_stop_pct" required /></label>
 
+          <label><span>趨勢 EMA 週期</span><input type="number" step="1" min="2" name="ema_trend_period" required /></label>
+          <label><span>訊號 EMA 週期</span><input type="number" step="1" min="2" name="ema_signal_period" required /></label>
+
           <div class="form-actions">
             <button type="submit" class="primary">啟動模擬</button>
             <button type="button" id="stop-run-button" class="secondary">停止目前模擬</button>

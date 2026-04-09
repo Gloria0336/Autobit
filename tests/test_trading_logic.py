@@ -346,6 +346,28 @@ class StubHistoricalFxService(HistoricalFxService):
         return 32.0 + (int(target_date[-2:]) % 5), target_date
 
 
+class FakeResponse:
+    def __init__(self, payload: object) -> None:
+        self.payload = payload
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> object:
+        return self.payload
+
+
+class RecordingSession:
+    def __init__(self, payload: object) -> None:
+        self.payload = payload
+        self.calls: list[dict[str, object]] = []
+        self.headers: dict[str, str] = {}
+
+    def get(self, url: str, *, params: dict[str, object] | None = None, timeout: int | None = None) -> FakeResponse:
+        self.calls.append({"url": url, "params": params or {}, "timeout": timeout})
+        return FakeResponse(self.payload)
+
+
 class HistoricalFxServiceTests(unittest.TestCase):
     def test_service_caches_and_falls_back_to_previous_date(self) -> None:
         tmpdir = make_workspace_tmpdir()
@@ -360,6 +382,22 @@ class HistoricalFxServiceTests(unittest.TestCase):
             cached_rate, cached_date = service.get_rate_for_date("2026-04-04")
             self.assertEqual((cached_rate, cached_date), (rate, resolved_date))
             self.assertEqual(service.calls, [])
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_service_uses_frankfurter_v2_pair_endpoint_for_historical_dates(self) -> None:
+        tmpdir = make_workspace_tmpdir()
+        try:
+            storage = Storage(tmpdir / "autobit.db")
+            session = RecordingSession({"date": "2026-03-19", "amount": 1.0, "base": "USD", "quote": "TWD", "rate": 32.91})
+            service = HistoricalFxService(storage, session=session)
+
+            rate, resolved_date = service.get_rate_for_date("2026-03-19")
+
+            self.assertEqual((rate, resolved_date), (32.91, "2026-03-19"))
+            self.assertEqual(len(session.calls), 1)
+            self.assertEqual(session.calls[0]["url"], "https://api.frankfurter.dev/v2/rate/USD/TWD")
+            self.assertEqual(session.calls[0]["params"], {"date": "2026-03-19"})
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 

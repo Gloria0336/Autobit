@@ -419,11 +419,11 @@ class HistoricalFxService:
         raise HistoricalDataError(f"Failed to fetch historical FX rate for {requested_date}")
 
     def _fetch_single_date(self, target_date: str) -> tuple[float, str]:
-        url = f"{self.base_url}/v2/{target_date}"
+        url = f"{self.base_url}/v2/rate/{FX_RATE_BASE}/{FX_RATE_QUOTE}"
         try:
             response = self.session.get(
                 url,
-                params={"from": FX_RATE_BASE, "to": FX_RATE_QUOTE, "symbols": FX_RATE_QUOTE},
+                params={"date": target_date},
                 timeout=REQUEST_TIMEOUT,
             )
             response.raise_for_status()
@@ -431,19 +431,25 @@ class HistoricalFxService:
         except Exception as exc:
             raise HistoricalDataError(f"Failed to fetch historical FX for {target_date}: {exc}") from exc
 
-        if "rate" in payload:
+        if isinstance(payload, dict) and "rate" in payload:
             rate = float(payload["rate"])
             resolved_date = str(payload.get("date", target_date))
             return rate, resolved_date
 
-        rates = payload.get("rates")
-        if isinstance(rates, dict):
-            if FX_RATE_QUOTE in rates and isinstance(rates[FX_RATE_QUOTE], (int, float)):
-                return float(rates[FX_RATE_QUOTE]), str(payload.get("date", target_date))
-            if rates:
-                first_date, first_payload = next(iter(rates.items()))
-                if isinstance(first_payload, dict) and FX_RATE_QUOTE in first_payload:
-                    return float(first_payload[FX_RATE_QUOTE]), str(first_date)
+        if isinstance(payload, list) and payload:
+            first_row = payload[0]
+            if isinstance(first_row, dict) and "rate" in first_row:
+                return float(first_row["rate"]), str(first_row.get("date", target_date))
+
+        if isinstance(payload, dict):
+            rates = payload.get("rates")
+            if isinstance(rates, dict):
+                if FX_RATE_QUOTE in rates and isinstance(rates[FX_RATE_QUOTE], (int, float)):
+                    return float(rates[FX_RATE_QUOTE]), str(payload.get("date", target_date))
+                if rates:
+                    first_date, first_payload = next(iter(rates.items()))
+                    if isinstance(first_payload, dict) and FX_RATE_QUOTE in first_payload:
+                        return float(first_payload[FX_RATE_QUOTE]), str(first_date)
 
         raise HistoricalDataError(f"Unexpected historical FX payload for {target_date}")
 

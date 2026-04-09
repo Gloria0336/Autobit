@@ -316,9 +316,24 @@ async function importLog() {
   await refreshRuns();
 }
 
-async function ensureReportLoaded() {
+function applyReportPayload(payload, { invalidateAnalysis = false } = {}) {
+  state.reportPayload = payload;
+  if (invalidateAnalysis) {
+    state.reportAnalysis = null;
+    state.analysisStatus = {
+      tone: "warning",
+      text: "報告已更新",
+      detail: "已重新抓取最新 run 資料；如需最新 AI 建議，請再按一次「AI 分析」。",
+    };
+  }
+}
+
+async function ensureReportLoaded({ forceReload = false, invalidateAnalysis = false } = {}) {
   if (!state.selectedRunId) throw new Error("請先選擇一個 run");
-  if (!state.reportPayload) state.reportPayload = await request(`/api/runs/${state.selectedRunId}/report`);
+  if (forceReload || !state.reportPayload) {
+    const payload = await request(`/api/runs/${state.selectedRunId}/report`);
+    applyReportPayload(payload, { invalidateAnalysis });
+  }
   const modelInput = document.getElementById("report-model-input");
   if (!modelInput.value && state.reportPayload.default_model) {
     modelInput.value = state.reportPayload.default_model;
@@ -330,7 +345,7 @@ async function ensureReportLoaded() {
 }
 
 async function generateReport() {
-  await ensureReportLoaded();
+  await ensureReportLoaded({ forceReload: true, invalidateAnalysis: true });
 }
 
 async function copyPrompt() {
@@ -366,7 +381,7 @@ async function testAnalysisConnection() {
 }
 
 async function analyzeReport() {
-  await ensureReportLoaded();
+  await ensureReportLoaded({ forceReload: true, invalidateAnalysis: true });
   if (state.analysisInFlight) return;
   const credentials = getAnalysisCredentials();
   state.analysisInFlight = true;
@@ -389,6 +404,11 @@ async function analyzeReport() {
         max_recommendations: 5,
       }),
     });
+    state.reportPayload = {
+      ...state.reportPayload,
+      report: state.reportAnalysis.report,
+      markdown: state.reportAnalysis.markdown,
+    };
     state.analysisStatus = {
       tone: "success",
       text: `AI 分析完成: ${state.reportAnalysis.model}`,
