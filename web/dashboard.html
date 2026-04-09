@@ -18,6 +18,36 @@
         <form id="run-form" class="form-grid">
           <section class="form-section">
             <div class="form-section-head">
+              <h2>策略儲存</h2>
+              <p>把目前表單參數存成策略，之後可直接套用、更新或刪除。</p>
+            </div>
+            <div class="field-group">
+              <div class="preset-toolbar">
+                <label>
+                  <span>已儲存策略</span>
+                  <select id="strategy-preset-select">
+                    <option value="">未選擇</option>
+                  </select>
+                </label>
+                <button type="button" id="apply-preset-button" class="ghost">套用策略</button>
+              </div>
+              <div class="preset-save-row">
+                <label>
+                  <span>策略名稱</span>
+                  <input type="text" id="strategy-preset-name" maxlength="80" placeholder="例如 BTC 15m 低風險版" />
+                </label>
+              </div>
+              <div class="preset-actions">
+                <button type="button" id="save-preset-button" class="secondary">另存新策略</button>
+                <button type="button" id="update-preset-button" class="ghost">覆寫目前策略</button>
+                <button type="button" id="delete-preset-button" class="ghost">刪除策略</button>
+              </div>
+              <p class="helper" id="strategy-preset-meta">尚未選擇策略。</p>
+            </div>
+          </section>
+
+          <section class="form-section">
+            <div class="form-section-head">
               <h2>資料來源</h2>
               <p>切換即時模擬或歷史回放，並設定回放來源。</p>
             </div>

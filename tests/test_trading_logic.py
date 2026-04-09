@@ -782,6 +782,58 @@ class ApiTests(unittest.TestCase):
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
+    def test_strategy_preset_endpoints_can_create_update_and_delete(self) -> None:
+        tmpdir = make_workspace_tmpdir()
+        try:
+            db_path = tmpdir / "autobit.db"
+            app = create_app(db_path=db_path, run_manager=RunManager(Storage(db_path), fetcher_factory=FakeFetcher))
+            client = TestClient(app)
+
+            create_response = client.post(
+                "/api/strategy-presets",
+                json={
+                    "name": "BTC low risk",
+                    "config": {
+                        "data_source": "historical",
+                        "historical_source_mode": "binance_api",
+                        "historical_base_interval": "15m",
+                        "historical_start_at": "2026-01-01T00:00:00Z",
+                        "historical_end_at": "2026-01-02T00:00:00Z",
+                    },
+                },
+            )
+            self.assertEqual(create_response.status_code, 200)
+            created = create_response.json()
+            self.assertEqual(created["name"], "BTC low risk")
+            self.assertEqual(created["config"]["historical_base_interval"], "15m")
+
+            list_response = client.get("/api/strategy-presets")
+            self.assertEqual(list_response.status_code, 200)
+            self.assertEqual(len(list_response.json()), 1)
+
+            update_response = client.put(
+                f"/api/strategy-presets/{created['id']}",
+                json={
+                    "name": "ETH momentum",
+                    "config": {
+                        "symbol": "ETHUSDT",
+                        "ema_trend_period": 120,
+                    },
+                },
+            )
+            self.assertEqual(update_response.status_code, 200)
+            updated = update_response.json()
+            self.assertEqual(updated["name"], "ETH momentum")
+            self.assertEqual(updated["config"]["symbol"], "ETHUSDT")
+            self.assertEqual(updated["config"]["ema_trend_period"], 120)
+            self.assertEqual(updated["config"]["data_source"], "live")
+
+            delete_response = client.delete(f"/api/strategy-presets/{created['id']}")
+            self.assertEqual(delete_response.status_code, 200)
+            self.assertEqual(client.get("/api/strategy-presets").json(), [])
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
     def test_report_markdown_endpoint_returns_plain_markdown(self) -> None:
         tmpdir = make_workspace_tmpdir()
         try:

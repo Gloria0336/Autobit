@@ -1,8 +1,11 @@
 ﻿const ANALYSIS_API_KEY_STORAGE = "autobit.openrouter.apiKey";
 const ANALYSIS_MODEL_STORAGE = "autobit.openrouter.model";
+const PRESET_EMPTY_VALUE = "";
 
 const state = {
   defaults: null,
+  presets: [],
+  selectedPresetId: null,
   analysisConfig: null,
   runs: [],
   selectedRunId: null,
@@ -58,6 +61,11 @@ function bindActions() {
   document.getElementById("import-log-button").addEventListener("click", () => runAction(importLog));
   document.getElementById("data-source").addEventListener("change", toggleHistoricalFields);
   document.getElementById("historical-source-mode").addEventListener("change", toggleHistoricalFields);
+  document.getElementById("strategy-preset-select").addEventListener("change", onPresetSelectionChange);
+  document.getElementById("apply-preset-button").addEventListener("click", () => runAction(applySelectedPreset));
+  document.getElementById("save-preset-button").addEventListener("click", () => runAction(savePreset));
+  document.getElementById("update-preset-button").addEventListener("click", () => runAction(updatePreset));
+  document.getElementById("delete-preset-button").addEventListener("click", () => runAction(deletePreset));
   document.getElementById("generate-report-button").addEventListener("click", () => runAction(generateReport));
   document.getElementById("copy-prompt-button").addEventListener("click", () => runAction(copyPrompt));
   document.getElementById("download-report-json-button").addEventListener("click", () => runAction(downloadReportJson));
@@ -88,6 +96,16 @@ async function loadDefaults() {
   form.elements.historical_source_mode.value = "binance_api";
   form.elements.historical_base_interval.value = defaults.signal_interval;
   setDefaultHistoricalRange(form);
+  await refreshStrategyPresets({ preserveSelection: false });
+  renderPresetControls();
+}
+
+async function refreshStrategyPresets({ preserveSelection = true } = {}) {
+  const previousPresetId = preserveSelection ? state.selectedPresetId : null;
+  state.presets = await request("/api/strategy-presets");
+  if (previousPresetId && state.presets.some((preset) => preset.id === previousPresetId)) state.selectedPresetId = previousPresetId;
+  else state.selectedPresetId = state.presets[0]?.id || null;
+  renderPresetControls();
 }
 
 async function loadAnalysisConfig() {
@@ -212,6 +230,13 @@ function toggleHistoricalFields() {
   document.getElementById("historical-base-interval").required = historical;
 }
 
+function onPresetSelectionChange(event) {
+  state.selectedPresetId = event.currentTarget.value || null;
+  const preset = getSelectedPreset();
+  document.getElementById("strategy-preset-name").value = preset?.name || "";
+  renderPresetControls();
+}
+
 async function submitRunForm(event) {
   event.preventDefault();
   if (state.runActionState !== "idle") return;
@@ -228,6 +253,119 @@ async function submitRunForm(event) {
       renderSimulationButtons();
     },
   });
+}
+
+function getSelectedPreset() {
+  return state.presets.find((preset) => preset.id === state.selectedPresetId) ?? null;
+}
+
+function getConfigFromForm() {
+  const form = document.getElementById("run-form");
+  const payload = {};
+  const formData = new FormData(form);
+  formData.forEach((value, key) => {
+    if (key === "file" || value instanceof File || value === "") return;
+    payload[key] = numericFields.has(key) ? Number(value) : value;
+  });
+  if (payload.data_source !== "historical") {
+    delete payload.historical_base_interval;
+    delete payload.historical_source_mode;
+    delete payload.historical_start_at;
+    delete payload.historical_end_at;
+    delete payload.historical_source_filename;
+  } else if (payload.historical_source_mode !== "binance_api") {
+    delete payload.historical_start_at;
+    delete payload.historical_end_at;
+  }
+  return payload;
+}
+
+function applyConfigToForm(config) {
+  const form = document.getElementById("run-form");
+  Object.entries(config).forEach(([key, value]) => {
+    const field = form.elements[key];
+    if (!field || field.type === "file" || value == null) return;
+    if (key === "historical_start_at" || key === "historical_end_at") {
+      field.value = toDateTimeLocalValue(new Date(value));
+      return;
+    }
+    field.value = String(value);
+  });
+  toggleHistoricalFields();
+}
+
+function getPresetNameInput() {
+  return document.getElementById("strategy-preset-name").value.trim();
+}
+
+function requirePresetName() {
+  const name = getPresetNameInput();
+  if (!name) throw new Error("請先輸入策略名稱");
+  return name;
+}
+
+async function savePreset() {
+  const preset = await request("/api/strategy-presets", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: requirePresetName(), config: getConfigFromForm() }),
+  });
+  state.selectedPresetId = preset.id;
+  await refreshStrategyPresets();
+  document.getElementById("strategy-preset-name").value = preset.name;
+}
+
+async function updatePreset() {
+  const preset = getSelectedPreset();
+  if (!preset) throw new Error("請先選擇要覆寫的策略");
+  const updated = await request(`/api/strategy-presets/${preset.id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: requirePresetName(), config: getConfigFromForm() }),
+  });
+  state.selectedPresetId = updated.id;
+  await refreshStrategyPresets();
+  document.getElementById("strategy-preset-name").value = updated.name;
+}
+
+async function deletePreset() {
+  const preset = getSelectedPreset();
+  if (!preset) throw new Error("請先選擇要刪除的策略");
+  await request(`/api/strategy-presets/${preset.id}`, { method: "DELETE" });
+  state.selectedPresetId = null;
+  document.getElementById("strategy-preset-name").value = "";
+  await refreshStrategyPresets({ preserveSelection: false });
+}
+
+async function applySelectedPreset() {
+  const preset = getSelectedPreset();
+  if (!preset) throw new Error("請先選擇要套用的策略");
+  applyConfigToForm(preset.config);
+  document.getElementById("strategy-preset-name").value = preset.name;
+  renderPresetControls();
+}
+
+function renderPresetControls() {
+  const select = document.getElementById("strategy-preset-select");
+  const meta = document.getElementById("strategy-preset-meta");
+  const applyButton = document.getElementById("apply-preset-button");
+  const updateButton = document.getElementById("update-preset-button");
+  const deleteButton = document.getElementById("delete-preset-button");
+  if (!select || !meta) return;
+
+  select.innerHTML = [`<option value="${PRESET_EMPTY_VALUE}">未選擇</option>`]
+    .concat(state.presets.map((preset) => `<option value="${escapeAttribute(preset.id)}">${escapeHtml(preset.name)}</option>`))
+    .join("");
+  select.value = state.selectedPresetId || PRESET_EMPTY_VALUE;
+
+  const preset = getSelectedPreset();
+  const hasPreset = Boolean(preset);
+  applyButton.disabled = !hasPreset;
+  updateButton.disabled = !hasPreset;
+  deleteButton.disabled = !hasPreset;
+  meta.textContent = hasPreset
+    ? `上次更新 ${formatDate(preset.updated_at)}`
+    : (state.presets.length ? "可選擇策略後直接套用或覆寫。" : "目前還沒有已儲存策略。");
 }
 
 async function submitLiveRun(form) {

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from email.parser import BytesParser
 from email.policy import default
+from datetime import datetime, timezone
 from pathlib import Path
+from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -38,6 +40,8 @@ from web_models import (
     RunSummary,
     SimulationConfig,
     StopRunResponse,
+    StrategyPreset,
+    StrategyPresetCreateRequest,
 )
 
 
@@ -75,6 +79,40 @@ def create_app(
     @app.get("/api/config/defaults", response_model=SimulationConfig)
     def config_defaults() -> SimulationConfig:
         return SimulationConfig()
+
+    @app.get("/api/strategy-presets", response_model=list[StrategyPreset])
+    def list_strategy_presets() -> list[StrategyPreset]:
+        return app.state.storage.list_strategy_presets()
+
+    @app.post("/api/strategy-presets", response_model=StrategyPreset)
+    def create_strategy_preset(payload: StrategyPresetCreateRequest) -> StrategyPreset:
+        now = _utc_now_iso()
+        return app.state.storage.save_strategy_preset(
+            uuid4().hex,
+            payload.name.strip(),
+            payload.config.model_dump(mode="json"),
+            created_at=now,
+            updated_at=now,
+        )
+
+    @app.put("/api/strategy-presets/{preset_id}", response_model=StrategyPreset)
+    def update_strategy_preset(preset_id: str, payload: StrategyPresetCreateRequest) -> StrategyPreset:
+        existing = next((item for item in app.state.storage.list_strategy_presets() if item.id == preset_id), None)
+        if existing is None:
+            raise HTTPException(status_code=404, detail="Strategy preset not found")
+        return app.state.storage.save_strategy_preset(
+            preset_id,
+            payload.name.strip(),
+            payload.config.model_dump(mode="json"),
+            created_at=existing.created_at.isoformat(),
+            updated_at=_utc_now_iso(),
+        )
+
+    @app.delete("/api/strategy-presets/{preset_id}")
+    def delete_strategy_preset(preset_id: str) -> dict[str, str]:
+        if not app.state.storage.delete_strategy_preset(preset_id):
+            raise HTTPException(status_code=404, detail="Strategy preset not found")
+        return {"status": "deleted", "id": preset_id}
 
     @app.get("/api/config/analysis", response_model=AnalysisConfigResponse)
     def analysis_defaults() -> AnalysisConfigResponse:
@@ -274,3 +312,7 @@ async def _parse_multipart_form(request: Request) -> tuple[dict[str, str], dict[
             }
 
     return fields, upload
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()

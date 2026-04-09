@@ -109,6 +109,19 @@ class SimulationConfig(BaseModel):
         return values
 
 
+class StrategyPreset(BaseModel):
+    id: str
+    name: str = Field(min_length=1, max_length=80)
+    config: SimulationConfig
+    created_at: datetime
+    updated_at: datetime
+
+
+class StrategyPresetCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    config: SimulationConfig
+
+
 class RunSummaryMetrics(BaseModel):
     starting_capital_twd: float = 0.0
     current_value_twd: float = 0.0

@@ -10,6 +10,7 @@ from web_models import (
     RunSummary,
     RunSummaryMetrics,
     SimulationConfig,
+    StrategyPreset,
     SimulationEvent,
     TickSnapshot,
     TradeRecord,
@@ -73,6 +74,14 @@ class Storage:
                     requested_date TEXT PRIMARY KEY,
                     resolved_date TEXT NOT NULL,
                     rate REAL NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS strategy_presets (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    config_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
                 );
                 """
             )
@@ -182,6 +191,48 @@ class Storage:
                 (requested_date, resolved_date, rate),
             )
 
+    def list_strategy_presets(self) -> list[StrategyPreset]:
+        with self._connect() as connection:
+            rows = connection.execute("SELECT * FROM strategy_presets ORDER BY updated_at DESC, created_at DESC").fetchall()
+        return [self._row_to_strategy_preset(row) for row in rows]
+
+    def save_strategy_preset(
+        self,
+        preset_id: str,
+        name: str,
+        config: dict,
+        *,
+        created_at: str,
+        updated_at: str,
+    ) -> StrategyPreset:
+        with self._lock, self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO strategy_presets (id, name, config_json, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    name = excluded.name,
+                    config_json = excluded.config_json,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    preset_id,
+                    name,
+                    json.dumps(config, ensure_ascii=False),
+                    created_at,
+                    updated_at,
+                ),
+            )
+            row = connection.execute("SELECT * FROM strategy_presets WHERE id = ?", (preset_id,)).fetchone()
+        if row is None:
+            raise KeyError(preset_id)
+        return self._row_to_strategy_preset(row)
+
+    def delete_strategy_preset(self, preset_id: str) -> bool:
+        with self._lock, self._connect() as connection:
+            cursor = connection.execute("DELETE FROM strategy_presets WHERE id = ?", (preset_id,))
+        return cursor.rowcount > 0
+
     def list_runs(self) -> list[RunSummary]:
         with self._connect() as connection:
             rows = connection.execute("SELECT * FROM runs ORDER BY started_at DESC").fetchall()
@@ -226,6 +277,15 @@ class Storage:
             incomplete=bool(row["incomplete"]),
             config=SimulationConfig.model_validate(json.loads(row["config_json"])),
             summary=RunSummaryMetrics.model_validate(json.loads(row["summary_json"])),
+        )
+
+    def _row_to_strategy_preset(self, row: sqlite3.Row) -> StrategyPreset:
+        return StrategyPreset(
+            id=row["id"],
+            name=row["name"],
+            config=SimulationConfig.model_validate(json.loads(row["config_json"])),
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
         )
 
     def _row_to_tick(self, row: sqlite3.Row) -> TickSnapshot:
