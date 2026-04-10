@@ -140,3 +140,4 @@ WEB_DIR = BASE_DIR / "web"
 WEB_INDEX_FILE = WEB_DIR / "dashboard.html"
 WEB_DATABASE_PATH = BASE_DIR / ".autobit-data" / DATABASE_FILE
 HISTORICAL_DATA_DIR = BASE_DIR / ".autobit-data" / "historical"
+AI_REPORTS_DIR = BASE_DIR / ".autobit-data" / "ai_reports"

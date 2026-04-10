@@ -70,6 +70,7 @@ function bindActions() {
   document.getElementById("copy-prompt-button").addEventListener("click", () => runAction(copyPrompt));
   document.getElementById("download-report-json-button").addEventListener("click", () => runAction(downloadReportJson));
   document.getElementById("download-report-md-button").addEventListener("click", () => runAction(downloadReportMarkdown));
+  document.getElementById("save-report-archive-button").addEventListener("click", () => runAction(saveReportArchive));
   document.getElementById("analyze-report-button").addEventListener("click", () => runAction(analyzeReport));
   document.getElementById("test-analysis-button").addEventListener("click", () => runAction(testAnalysisConnection));
   apiKeyInput.addEventListener("input", persistAnalysisPreferences);
@@ -503,6 +504,30 @@ async function downloadReportMarkdown() {
   downloadFile(`${state.selectedRunId}-report.md`, payload.markdown, "text/markdown;charset=utf-8");
 }
 
+async function saveReportArchive() {
+  const payload = await ensureReportLoaded();
+  const result = await request(`/api/runs/${state.selectedRunId}/report/archive`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      report: payload.report,
+      markdown: payload.markdown,
+      ai_analysis_markdown: state.reportAnalysis?.ai_analysis_markdown || null,
+      recommendations: state.reportAnalysis?.recommendations || [],
+      test_plan: state.reportAnalysis?.test_plan || [],
+      model: state.reportAnalysis?.model || null,
+      generated_at: state.reportAnalysis?.generated_at || null,
+      parsing_error: state.reportAnalysis?.parsing_error || null,
+    }),
+  });
+  state.analysisStatus = {
+    tone: "success",
+    text: "報告已儲存",
+    detail: `已寫入 ${result.archive_dir}`,
+  };
+  renderAnalysisStatus();
+}
+
 async function testAnalysisConnection() {
   const credentials = getAnalysisCredentials();
   const result = await request("/api/analysis/test", {
@@ -550,7 +575,7 @@ async function analyzeReport() {
     state.analysisStatus = {
       tone: "success",
       text: `AI 分析完成: ${state.reportAnalysis.model}`,
-      detail: state.reportAnalysis.parsing_error ? `解析提醒: ${state.reportAnalysis.parsing_error}` : "已成功取得 AI 回應",
+      detail: state.reportAnalysis.parsing_error ? `解析提醒: ${state.reportAnalysis.parsing_error}；並已自動存檔。` : "已成功取得 AI 回應，並自動存入 ai_reports。",
     };
   } catch (error) {
     state.analysisStatus = {

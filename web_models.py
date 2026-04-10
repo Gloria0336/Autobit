@@ -400,6 +400,24 @@ class AnalyzeReportResponse(BaseModel):
     parsing_error: str | None = None
 
 
+class SaveReportArchiveRequest(BaseModel):
+    report: AnalysisReport
+    markdown: str
+    ai_analysis_markdown: str | None = None
+    recommendations: list[StrategyRecommendation] = Field(default_factory=list)
+    test_plan: list[str] = Field(default_factory=list)
+    model: str | None = None
+    generated_at: datetime | None = None
+    parsing_error: str | None = None
+
+
+class SaveReportArchiveResponse(BaseModel):
+    run_id: str
+    archive_dir: str
+    saved_at: datetime
+    saved_files: list[str] = Field(default_factory=list)
+
+
 class AnalysisConnectionTestRequest(BaseModel):
     api_key: str | None = None
     model: str | None = None

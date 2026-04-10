@@ -15,6 +15,7 @@ from pydantic import ValidationError
 from analysis_ai import ReportAnalysisService
 from analysis_report import RunReportService
 from config import (
+    AI_REPORTS_DIR,
     LOG_FILE,
     OPENROUTER_MODEL_CANDIDATES,
     WEB_DATABASE_PATH,
@@ -25,6 +26,7 @@ from config import (
 )
 from historical_data import HistoricalDataError
 from openrouter_client import OpenRouterClient, OpenRouterConfigurationError, OpenRouterRequestError
+from report_archive import ReportArchiveService
 from run_manager import RunManager
 from storage import Storage
 from web_models import (
@@ -37,6 +39,8 @@ from web_models import (
     LogImportResponse,
     RunDetail,
     RunReportResponse,
+    SaveReportArchiveRequest,
+    SaveReportArchiveResponse,
     RunSummary,
     SimulationConfig,
     StopRunResponse,
@@ -65,6 +69,7 @@ def create_app(
     app.state.run_manager = manager
     app.state.report_service = RunReportService()
     app.state.openrouter_client = OpenRouterClient()
+    app.state.report_archive_service = ReportArchiveService(AI_REPORTS_DIR)
     app.state.report_analysis_service = ReportAnalysisService(
         report_service=app.state.report_service,
         openrouter_client=app.state.openrouter_client,
@@ -176,16 +181,25 @@ def create_app(
         if detail is None:
             raise HTTPException(status_code=404, detail="Run not found")
         try:
-            return app.state.report_analysis_service.analyze_run(
+            response = app.state.report_analysis_service.analyze_run(
                 detail,
                 payload,
                 referer=request.headers.get("referer"),
                 title=request.headers.get("x-title"),
             )
+            app.state.report_archive_service.save_analysis_response(run_id, response)
+            return response
         except OpenRouterConfigurationError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         except OpenRouterRequestError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    @app.post("/api/runs/{run_id}/report/archive", response_model=SaveReportArchiveResponse)
+    def archive_run_report(run_id: str, payload: SaveReportArchiveRequest) -> SaveReportArchiveResponse:
+        detail = app.state.run_manager.get_run(run_id)
+        if detail is None:
+            raise HTTPException(status_code=404, detail="Run not found")
+        return app.state.report_archive_service.save_run_report(run_id, payload)
 
     @app.post("/api/runs", response_model=RunSummary)
     def create_run(config: SimulationConfig) -> RunSummary:

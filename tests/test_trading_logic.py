@@ -919,6 +919,43 @@ class ApiTests(unittest.TestCase):
             self.assertEqual(payload["recommendations"][0]["parameter"], "rsi_entry_low")
             self.assertEqual(payload["recommendations"][0]["suggested_value"], 47)
             self.assertEqual(len(payload["test_plan"]), 1)
+            archive_dir = Path(app.state.report_archive_service.base_dir) / run_id
+            self.assertTrue((archive_dir / "latest_archive.json").exists())
+            self.assertTrue((archive_dir / "latest_report.md").exists())
+            self.assertTrue((archive_dir / "latest_ai_analysis.md").exists())
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_report_archive_endpoint_saves_current_web_report(self) -> None:
+        tmpdir = make_workspace_tmpdir()
+        try:
+            db_path = tmpdir / "autobit.db"
+            app = self._create_historical_app(db_path, tmpdir)
+            client = TestClient(app)
+            run_id, _ = self._create_completed_historical_run(client)
+
+            report_response = client.get(f"/api/runs/{run_id}/report")
+            self.assertEqual(report_response.status_code, 200)
+            report_payload = report_response.json()
+
+            archive_response = client.post(
+                f"/api/runs/{run_id}/report/archive",
+                json={
+                    "report": report_payload["report"],
+                    "markdown": report_payload["markdown"],
+                    "ai_analysis_markdown": "暫存在 web 的 AI 分析內容",
+                    "recommendations": [],
+                    "test_plan": [],
+                    "model": "openai/gpt-4.1-mini",
+                },
+            )
+            self.assertEqual(archive_response.status_code, 200)
+            payload = archive_response.json()
+            archive_dir = Path(payload["archive_dir"])
+            self.assertTrue((archive_dir / "latest_archive.json").exists())
+            self.assertTrue((archive_dir / "latest_report.md").exists())
+            self.assertTrue((archive_dir / "latest_ai_analysis.md").exists())
+            self.assertIn(run_id, payload["archive_dir"])
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
