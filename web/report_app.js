@@ -32,6 +32,8 @@ const numericFields = new Set([
   "rsi_exit_high",
   "anti_chase_pct",
   "stop_loss_pct",
+  "soft_sell_min_profit_pct",
+  "exit_cooldown_minutes",
   "trail_trigger_pct",
   "trail_stop_pct",
   "ema_trend_period",
@@ -794,6 +796,7 @@ function renderReportPanel() {
 
   const report = state.reportPayload.report;
   const analysis = state.reportAnalysis;
+  const strategyParams = formatStrategyParams(report.run_context.strategy_params || {});
   const observationCards = (report.fallback_observations || []).map((item) => `
     <article class="observation-card">
       <div class="observation-head">
@@ -830,7 +833,7 @@ function renderReportPanel() {
           <div class="observation-list">${observationCards || '<div class="empty-state"><p>目前沒有 fallback 觀察。</p></div>'}</div>
         </article>
         <article class="report-block">
-          <div class="card-head"><h3>訊號診斷</h3><p>檢視 BUY / SELL / HOLD 訊號與停損統計。</p></div>
+          <div class="card-head"><h3>訊號診斷</h3><p>檢視 BUY / SELL / HOLD 訊號、停損與冷卻/軟賣延後痕跡。</p></div>
           <div class="report-kv">
             <div><span>BUY 訊號</span><strong>${report.signal_diagnostics.buy_signal_count}</strong></div>
             <div><span>SELL 訊號</span><strong>${report.signal_diagnostics.sell_signal_count}</strong></div>
@@ -843,6 +846,13 @@ function renderReportPanel() {
           ${formatReasonList(report.signal_diagnostics.top_hold_reasons)}
           <h4>Top SELL Reasons</h4>
           ${formatReasonList(report.signal_diagnostics.top_sell_reasons)}
+        </article>
+      </section>
+
+      <section class="report-columns">
+        <article class="report-block">
+          <div class="card-head"><h3>策略參數</h3><p>這些數值會同步進入 Markdown 報告與 AI Prompt。</p></div>
+          ${strategyParams}
         </article>
       </section>
 
@@ -943,6 +953,31 @@ function formatReasonList(items) {
 function formatStringList(items) {
   if (!items?.length) return '<div class="empty-state"><p>目前沒有下一輪測試建議。</p></div>';
   return `<ul class="plain-list">${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
+}
+
+function formatStrategyParams(params) {
+  const labels = {
+    trend_interval: "趨勢週期",
+    signal_interval: "訊號週期",
+    rsi_entry_low: "RSI 進場下限",
+    rsi_entry_high: "RSI 進場上限",
+    rsi_exit_high: "RSI 出場上限",
+    anti_chase_pct: "避免追價 (%)",
+    stop_loss_pct: "停損 (%)",
+    soft_sell_min_profit_pct: "軟性賣出最低獲利 (%)",
+    exit_cooldown_minutes: "出場冷卻期 (分鐘)",
+    trail_trigger_pct: "移動停利觸發 (%)",
+    trail_stop_pct: "移動停利回吐 (%)",
+    ema_trend_period: "趨勢 EMA 週期",
+    ema_signal_period: "訊號 EMA 週期",
+    rsi_period: "RSI 週期",
+    macd_fast: "MACD Fast",
+    macd_slow: "MACD Slow",
+    macd_signal_line: "MACD Signal",
+  };
+  const entries = Object.entries(params).filter(([, value]) => value != null);
+  if (!entries.length) return '<div class="empty-state"><p>目前沒有可顯示的策略參數。</p></div>';
+  return `<div class="stack-list">${entries.map(([key, value]) => `<div class="stack-row"><span>${escapeHtml(labels[key] || key)}</span><strong>${escapeHtml(String(value))}</strong></div>`).join("")}</div>`;
 }
 
 function scaleX(index, length, width, padding) {

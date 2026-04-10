@@ -11,6 +11,7 @@ from config import (
     DISPLAY_CURRENCY,
     EMA_SIGNAL_PERIOD,
     EMA_TREND_PERIOD,
+    EXIT_COOLDOWN_MINUTES,
     FX_RATE_BASE,
     FX_RATE_QUOTE,
     MACD_FAST,
@@ -21,6 +22,7 @@ from config import (
     RSI_EXIT_HIGH,
     RSI_PERIOD,
     SIGNAL_INTERVAL,
+    SOFT_SELL_MIN_PROFIT_PCT,
     STOP_LOSS_PCT,
     SUPPORTED_INTERVALS,
     SYMBOL,
@@ -36,6 +38,8 @@ StrategyParameterName = Literal[
     "rsi_exit_high",
     "anti_chase_pct",
     "stop_loss_pct",
+    "soft_sell_min_profit_pct",
+    "exit_cooldown_minutes",
     "trail_trigger_pct",
     "trail_stop_pct",
     "ema_trend_period",
@@ -58,6 +62,8 @@ class SimulationConfig(BaseModel):
     rsi_exit_high: float = Field(RSI_EXIT_HIGH, ge=0, le=100)
     anti_chase_pct: float = Field(ANTI_CHASE_PCT, ge=0, lt=1)
     stop_loss_pct: float = Field(STOP_LOSS_PCT, ge=0, lt=1)
+    soft_sell_min_profit_pct: float = Field(SOFT_SELL_MIN_PROFIT_PCT, ge=0, lt=1)
+    exit_cooldown_minutes: float = Field(EXIT_COOLDOWN_MINUTES, ge=0)
     trail_trigger_pct: float = Field(TRAIL_TRIGGER_PCT, ge=0, lt=1)
     trail_stop_pct: float = Field(TRAIL_STOP_PCT, ge=0, lt=1)
     ema_trend_period: int = Field(EMA_TREND_PERIOD, ge=2)

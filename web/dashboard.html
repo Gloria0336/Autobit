@@ -140,11 +140,13 @@
           <section class="form-section">
             <div class="form-section-head">
               <h2>風控</h2>
-              <p>限制追價、停損與移動停利行為。</p>
+              <p>限制追價、停損、軟性賣出與移動停利行為。獲利門檻與冷卻期填 `0` 代表關閉。</p>
             </div>
             <div class="form-section-grid">
               <label><span>避免追價 (%)</span><input type="number" step="0.001" min="0" max="1" name="anti_chase_pct" required /></label>
               <label><span>停損 (%)</span><input type="number" step="0.001" min="0" max="1" name="stop_loss_pct" required /></label>
+              <label><span>軟性賣出最低獲利 (%)</span><input type="number" step="0.001" min="0" max="1" name="soft_sell_min_profit_pct" required /></label>
+              <label><span>出場冷卻期 (分鐘)</span><input type="number" step="1" min="0" name="exit_cooldown_minutes" required /></label>
               <label><span>移動停利觸發 (%)</span><input type="number" step="0.001" min="0" max="1" name="trail_trigger_pct" required /></label>
               <label><span>移動停利回吐 (%)</span><input type="number" step="0.001" min="0" max="1" name="trail_stop_pct" required /></label>
             </div>

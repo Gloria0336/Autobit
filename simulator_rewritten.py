@@ -121,6 +121,7 @@ class Simulator:
             fx_rate = snapshot.fx_rate
             fx_date = snapshot.fx_date
             market_timestamp = snapshot.market_timestamp
+            signal_time = market_timestamp or started_at
 
             portfolio_value = self.portfolio.mark_to_market(price)
             position_cost = self.portfolio.entry_price * self.portfolio.btc_held if self.portfolio.in_position else 0.0
@@ -146,7 +147,7 @@ class Simulator:
                     "ema20_twd": indicators["ema20"] * fx_rate,
                 },
                 "portfolio": self.portfolio.snapshot(price, fx_rate),
-                "strategy_state": self.strategy.snapshot(),
+                "strategy_state": self.strategy.snapshot(signal_time),
                 "next_tick_at": next_tick_at.isoformat(),
             }
             self._emit("market_snapshot", snapshot_payload)
@@ -157,6 +158,7 @@ class Simulator:
                 portfolio_value,
                 self.portfolio.starting_capital,
                 position_cost,
+                signal_time,
             )
             self._last_signal = signal
 
@@ -172,14 +174,14 @@ class Simulator:
                 trade_payload = trade.to_dict(fx_rate)
             elif signal.action == "SELL" and self.portfolio.in_position:
                 trade = self.portfolio.execute_sell(price, signal.fee_type, signal.reason, **trade_kwargs)
-                self.strategy.on_exit()
+                self.strategy.on_exit(signal_time)
                 trade_payload = trade.to_dict(fx_rate)
 
             final_snapshot = {
                 **snapshot_payload,
                 "signal": signal.to_dict(),
                 "portfolio": self.portfolio.snapshot(price, fx_rate),
-                "strategy_state": self.strategy.snapshot(),
+                "strategy_state": self.strategy.snapshot(signal_time),
             }
             self._emit("signal_evaluated", final_snapshot)
 

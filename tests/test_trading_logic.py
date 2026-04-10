@@ -3,6 +3,7 @@
 import shutil
 import time
 import unittest
+from datetime import datetime, timedelta, timezone
 from io import BytesIO
 import os
 from pathlib import Path
@@ -147,6 +148,73 @@ class StrategyTests(unittest.TestCase):
         )
         self.assertEqual(signal.action, "SELL")
 
+    def test_stop_loss_is_based_on_entry_cost_not_starting_capital(self) -> None:
+        portfolio = Portfolio(1000)
+        portfolio.execute_buy(100, "taker", "test")
+        engine = StrategyEngine(SimulationConfig(stop_loss_pct=0.013))
+        engine.on_entry(100)
+        price = 98.8
+        portfolio_value = portfolio.get_total_value(price)
+        signal = engine.evaluate(
+            price,
+            {"rsi": 50, "ema200": 0, "ema20": 100, "macd_hist": 1, "macd_hist_prev": 1},
+            portfolio_value,
+            portfolio.starting_capital,
+            portfolio.entry_price * portfolio.btc_held,
+        )
+        self.assertEqual(signal.action, "HOLD")
+
+    def test_soft_sell_requires_min_profit_threshold(self) -> None:
+        portfolio = Portfolio(1000)
+        portfolio.execute_buy(100, "taker", "test")
+        engine = StrategyEngine(SimulationConfig(soft_sell_min_profit_pct=0.03))
+        engine.on_entry(100)
+
+        below_threshold = engine.evaluate(
+            101,
+            {"rsi": 80, "ema200": 0, "ema20": 100, "macd_hist": 1, "macd_hist_prev": 1},
+            portfolio.get_total_value(101),
+            portfolio.starting_capital,
+            portfolio.entry_price * portfolio.btc_held,
+        )
+        self.assertEqual(below_threshold.action, "HOLD")
+        self.assertIn("Soft sell deferred", below_threshold.reason)
+
+        above_threshold = engine.evaluate(
+            103.5,
+            {"rsi": 80, "ema200": 0, "ema20": 100, "macd_hist": 1, "macd_hist_prev": 1},
+            portfolio.get_total_value(103.5),
+            portfolio.starting_capital,
+            portfolio.entry_price * portfolio.btc_held,
+        )
+        self.assertEqual(above_threshold.action, "SELL")
+
+    def test_exit_cooldown_blocks_reentry_until_elapsed(self) -> None:
+        engine = StrategyEngine(SimulationConfig(exit_cooldown_minutes=30))
+        exit_time = datetime(2026, 4, 10, 0, 0, tzinfo=timezone.utc)
+        engine.on_exit(exit_time)
+
+        cooldown_signal = engine.evaluate(
+            100,
+            {"rsi": 60, "ema200": 90, "ema20": 99, "macd_hist": 1, "macd_hist_prev": 1},
+            1000,
+            1000,
+            0,
+            exit_time + timedelta(minutes=10),
+        )
+        self.assertEqual(cooldown_signal.action, "HOLD")
+        self.assertIn("Exit cooldown active", cooldown_signal.reason)
+
+        reentry_signal = engine.evaluate(
+            100,
+            {"rsi": 60, "ema200": 90, "ema20": 99, "macd_hist": 1, "macd_hist_prev": 1},
+            1000,
+            1000,
+            0,
+            exit_time + timedelta(minutes=31),
+        )
+        self.assertEqual(reentry_signal.action, "BUY")
+
 
 class ConfigTests(unittest.TestCase):
     def test_simulation_config_defaults(self) -> None:
@@ -155,6 +223,8 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.data_source, "live")
         self.assertGreater(config.starting_capital_twd, 0)
         self.assertEqual(config.check_interval_sec, 10.0)
+        self.assertEqual(config.soft_sell_min_profit_pct, 0.0)
+        self.assertEqual(config.exit_cooldown_minutes, 0.0)
 
     def test_simulation_config_requires_historical_interval(self) -> None:
         with self.assertRaises(ValueError):
@@ -723,6 +793,8 @@ class ApiTests(unittest.TestCase):
                     ("rsi_exit_high", (None, "75")),
                     ("anti_chase_pct", (None, "0.02")),
                     ("stop_loss_pct", (None, "0.02")),
+                    ("soft_sell_min_profit_pct", (None, "0.01")),
+                    ("exit_cooldown_minutes", (None, "30")),
                     ("trail_trigger_pct", (None, "0.015")),
                     ("trail_stop_pct", (None, "0.01")),
                     ("historical_source_mode", (None, "binance_api")),
@@ -765,6 +837,8 @@ class ApiTests(unittest.TestCase):
             self.assertIn("Autobit Run Analysis Report", payload["markdown"])
             self.assertIn("Autobit Run Analysis Report", payload["prompt"])
             self.assertIn("performance", payload["report"])
+            self.assertIn("soft_sell_min_profit_pct", payload["report"]["run_context"]["strategy_params"])
+            self.assertIn("exit_cooldown_minutes", payload["prompt"])
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 

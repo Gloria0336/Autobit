@@ -3,6 +3,7 @@ from __future__ import annotations
 import shutil
 import time
 import unittest
+from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from pathlib import Path
 from uuid import uuid4
@@ -111,6 +112,71 @@ class StrategyTests(unittest.TestCase):
         )
         self.assertEqual(signal.action, "SELL")
 
+    def test_stop_loss_is_based_on_entry_cost_not_starting_capital(self) -> None:
+        portfolio = Portfolio(1000)
+        portfolio.execute_buy(100, "taker", "test")
+        engine = StrategyEngine(SimulationConfig(stop_loss_pct=0.013))
+        engine.on_entry(100)
+        signal = engine.evaluate(
+            98.8,
+            {"rsi": 50, "ema200": 0, "ema20": 100, "macd_hist": 1, "macd_hist_prev": 1},
+            portfolio.get_total_value(98.8),
+            portfolio.starting_capital,
+            portfolio.entry_price * portfolio.btc_held,
+        )
+        self.assertEqual(signal.action, "HOLD")
+
+    def test_soft_sell_requires_min_profit_threshold(self) -> None:
+        portfolio = Portfolio(1000)
+        portfolio.execute_buy(100, "taker", "test")
+        engine = StrategyEngine(SimulationConfig(soft_sell_min_profit_pct=0.03))
+        engine.on_entry(100)
+
+        hold_signal = engine.evaluate(
+            101,
+            {"rsi": 80, "ema200": 0, "ema20": 100, "macd_hist": 1, "macd_hist_prev": 1},
+            portfolio.get_total_value(101),
+            portfolio.starting_capital,
+            portfolio.entry_price * portfolio.btc_held,
+        )
+        self.assertEqual(hold_signal.action, "HOLD")
+        self.assertIn("Soft sell deferred", hold_signal.reason)
+
+        sell_signal = engine.evaluate(
+            103.5,
+            {"rsi": 80, "ema200": 0, "ema20": 100, "macd_hist": 1, "macd_hist_prev": 1},
+            portfolio.get_total_value(103.5),
+            portfolio.starting_capital,
+            portfolio.entry_price * portfolio.btc_held,
+        )
+        self.assertEqual(sell_signal.action, "SELL")
+
+    def test_exit_cooldown_blocks_reentry_until_elapsed(self) -> None:
+        engine = StrategyEngine(SimulationConfig(exit_cooldown_minutes=30))
+        exit_time = datetime(2026, 4, 10, 0, 0, tzinfo=timezone.utc)
+        engine.on_exit(exit_time)
+
+        hold_signal = engine.evaluate(
+            100,
+            {"rsi": 60, "ema200": 90, "ema20": 99, "macd_hist": 1, "macd_hist_prev": 1},
+            1000,
+            1000,
+            0,
+            exit_time + timedelta(minutes=10),
+        )
+        self.assertEqual(hold_signal.action, "HOLD")
+        self.assertIn("Exit cooldown active", hold_signal.reason)
+
+        buy_signal = engine.evaluate(
+            100,
+            {"rsi": 60, "ema200": 90, "ema20": 99, "macd_hist": 1, "macd_hist_prev": 1},
+            1000,
+            1000,
+            0,
+            exit_time + timedelta(minutes=31),
+        )
+        self.assertEqual(buy_signal.action, "BUY")
+
 
 class ConfigTests(unittest.TestCase):
     def test_simulation_config_defaults(self) -> None:
@@ -118,6 +184,8 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.symbol, "BTCUSDT")
         self.assertEqual(config.data_source, "live")
         self.assertGreater(config.starting_capital_twd, 0)
+        self.assertEqual(config.soft_sell_min_profit_pct, 0.0)
+        self.assertEqual(config.exit_cooldown_minutes, 0.0)
 
     def test_simulation_config_requires_historical_interval(self) -> None:
         with self.assertRaises(ValueError):

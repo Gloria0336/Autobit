@@ -269,6 +269,8 @@ def _coerce_form_config(form) -> dict:
         "rsi_exit_high",
         "anti_chase_pct",
         "stop_loss_pct",
+        "soft_sell_min_profit_pct",
+        "exit_cooldown_minutes",
         "trail_trigger_pct",
         "trail_stop_pct",
         "ema_trend_period",
